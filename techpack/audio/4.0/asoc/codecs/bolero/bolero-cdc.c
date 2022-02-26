@@ -14,7 +14,6 @@
 #include <soc/snd_event.h>
 #include <linux/pm_runtime.h>
 #include <soc/swr-common.h>
-#include <dsp/hw-vote-rsc.h>
 #include "bolero-cdc.h"
 #include "internal.h"
 #include "bolero-clk-rsc.h"
@@ -100,32 +99,24 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		goto ssr_err;
 	}
 
-	if (priv->macro_params[VA_MACRO].dev) {
+	if (priv->macro_params[VA_MACRO].dev)
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
-		if (!bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
-			goto ssr_err;
-	}
 
-	if (priv->version < BOLERO_VERSION_2_0) {
-		/* Request Clk before register access */
-		ret = bolero_clk_rsc_request_clock(
-				priv->macro_params[macro_id].dev,
+	/* Request Clk before register access */
+	ret = bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
 				priv->macro_params[macro_id].default_clk_id,
 				priv->macro_params[macro_id].clk_id_req,
 				true);
-		if (ret < 0) {
-			dev_err_ratelimited(priv->dev,
-				"%s: Failed to enable clock, ret:%d\n",
-				__func__, ret);
-			goto err;
-		}
+	if (ret < 0) {
+		dev_err_ratelimited(priv->dev,
+			"%s: Failed to enable clock, ret:%d\n", __func__, ret);
+		goto err;
 	}
 
 	bolero_ahb_read_device(
 		priv->macro_params[macro_id].io_base, reg, val);
 
-	if (priv->version < BOLERO_VERSION_2_0)
-		bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
+	bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
 				priv->macro_params[macro_id].default_clk_id,
 				priv->macro_params[macro_id].clk_id_req,
 				false);
@@ -152,32 +143,24 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		ret = -EINVAL;
 		goto ssr_err;
 	}
-	if (priv->macro_params[VA_MACRO].dev) {
+	if (priv->macro_params[VA_MACRO].dev)
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
-		if (!bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
-			goto ssr_err;
-	}
 
-	if (priv->version < BOLERO_VERSION_2_0) {
-		/* Request Clk before register access */
-		ret = bolero_clk_rsc_request_clock(
-				priv->macro_params[macro_id].dev,
+	/* Request Clk before register access */
+	ret = bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
 				priv->macro_params[macro_id].default_clk_id,
 				priv->macro_params[macro_id].clk_id_req,
 				true);
-		if (ret < 0) {
-			dev_err_ratelimited(priv->dev,
-				"%s: Failed to enable clock, ret:%d\n",
-				__func__, ret);
-			goto err;
-		}
+	if (ret < 0) {
+		dev_err_ratelimited(priv->dev,
+			"%s: Failed to enable clock, ret:%d\n", __func__, ret);
+		goto err;
 	}
 
 	bolero_ahb_write_device(
 			priv->macro_params[macro_id].io_base, reg, val);
 
-	if (priv->version < BOLERO_VERSION_2_0)
-		bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
+	bolero_clk_rsc_request_clock(priv->macro_params[macro_id].dev,
 				priv->macro_params[macro_id].default_clk_id,
 				priv->macro_params[macro_id].clk_id_req,
 				false);
@@ -832,14 +815,6 @@ static int bolero_ssr_enable(struct device *dev, void *data)
 				priv->codec,
 				BOLERO_MACRO_EVT_CLK_RESET, 0x0);
 	}
-
-	if (priv->rsc_clk_cb)
-		priv->rsc_clk_cb(priv->clk_dev, BOLERO_MACRO_EVT_SSR_GFMUX_UP);
-
-	/* Reset HW votes after SSR */
-	hw_vote_rsc_reset(priv->lpass_core_hw_vote);
-	hw_vote_rsc_reset(priv->lpass_audio_hw_vote);
-
 	trace_printk("%s: clk count reset\n", __func__);
 	regcache_cache_only(priv->regmap, false);
 	mutex_lock(&priv->clk_lock);
@@ -1099,7 +1074,6 @@ int bolero_register_event_listener(struct snd_soc_codec *codec,
 	return ret;
 }
 EXPORT_SYMBOL(bolero_register_event_listener);
-
 static int bolero_soc_codec_probe(struct snd_soc_codec *codec)
 {
 	struct bolero_priv *priv = dev_get_drvdata(codec->dev);
@@ -1298,13 +1272,6 @@ static int bolero_probe(struct platform_device *pdev)
 			__func__);
 		ret = 0;
 	}
-	if (priv->version == BOLERO_VERSION_2_1) {
-		bolero_reg_access[TX_MACRO] = bolero_tx_reg_access_v2;
-		bolero_reg_access[VA_MACRO] = bolero_va_reg_access_v2;
-	} else if (priv->version == BOLERO_VERSION_2_0) {
-		bolero_reg_access[VA_MACRO] = bolero_va_reg_access_v3;
-	}
-
 	priv->dev = &pdev->dev;
 	priv->dev_up = true;
 	priv->initial_boot = true;
@@ -1371,7 +1338,6 @@ static int bolero_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
 int bolero_runtime_resume(struct device *dev)
 {
 	struct bolero_priv *priv = dev_get_drvdata(dev->parent);
@@ -1384,7 +1350,7 @@ int bolero_runtime_resume(struct device *dev)
 	}
 
 	if (priv->core_hw_vote_count == 0) {
-		ret = hw_vote_rsc_enable(priv->lpass_core_hw_vote);
+		ret = clk_prepare_enable(priv->lpass_core_hw_vote);
 		if (ret < 0) {
 			dev_err(dev, "%s:lpass core hw enable failed\n",
 				__func__);
@@ -1402,7 +1368,7 @@ audio_vote:
 	}
 
 	if (priv->core_audio_vote_count == 0) {
-		ret = hw_vote_rsc_enable(priv->lpass_audio_hw_vote);
+		ret = clk_prepare_enable(priv->lpass_audio_hw_vote);
 		if (ret < 0) {
 			dev_err(dev, "%s:lpass audio hw enable failed\n",
 				__func__);
@@ -1427,7 +1393,7 @@ int bolero_runtime_suspend(struct device *dev)
 	mutex_lock(&priv->vote_lock);
 	if (priv->lpass_core_hw_vote != NULL) {
 		if (--priv->core_hw_vote_count == 0)
-			hw_vote_rsc_disable(priv->lpass_core_hw_vote);
+			clk_disable_unprepare(priv->lpass_core_hw_vote);
 		if (priv->core_hw_vote_count < 0)
 			priv->core_hw_vote_count = 0;
 	} else {
@@ -1439,7 +1405,7 @@ int bolero_runtime_suspend(struct device *dev)
 
 	if (priv->lpass_audio_hw_vote != NULL) {
 		if (--priv->core_audio_vote_count == 0)
-			hw_vote_rsc_disable(priv->lpass_audio_hw_vote);
+			clk_disable_unprepare(priv->lpass_audio_hw_vote);
 		if (priv->core_audio_vote_count < 0)
 			priv->core_audio_vote_count = 0;
 	} else {
@@ -1453,7 +1419,6 @@ int bolero_runtime_suspend(struct device *dev)
 	return 0;
 }
 EXPORT_SYMBOL(bolero_runtime_suspend);
-#endif /* CONFIG_PM */
 
 bool bolero_check_core_votes(struct device *dev)
 {

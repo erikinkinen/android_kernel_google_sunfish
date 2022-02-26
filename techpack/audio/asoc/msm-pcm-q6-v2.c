@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1395,7 +1395,7 @@ static int msm_pcm_volume_ctl_get(struct snd_kcontrol *kcontrol,
 	soc_prtd = substream->private_data;
 	if (!substream->runtime || !soc_prtd) {
 		pr_debug("%s substream runtime or private_data not found\n",
-				__func__);
+				 __func__);
 		return 0;
 	}
 
@@ -1693,6 +1693,9 @@ static int msm_pcm_chmap_ctl_get(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 
+	memset(ucontrol->value.integer.value, 0,
+		sizeof(ucontrol->value.integer.value));
+
 	mutex_lock(&pdata->lock);
 	prtd = substream->runtime->private_data;
 
@@ -1939,7 +1942,7 @@ static int msm_pcm_path_latency_ctl_get(struct snd_kcontrol *kcontrol,
 		if (rc) {
 			pr_err("%s: get_path_delay failed, ret=%d\n",
 				__func__, rc);
-			mutex_unlock(&pdata->lock);
+			mutex_lock(&pdata->lock);
 			return -EINVAL;
 		}
 		ucontrol->value.integer.value[0] =
